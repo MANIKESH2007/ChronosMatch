@@ -10,6 +10,13 @@ class OrderBook:
         if not isinstance(order, Order):
             raise TypeError("Expected an Order object")
 
+        # Prevent duplicate order IDs across both sides
+        for existing_order in self.get_all_orders():
+            if existing_order.order_id == order.order_id:
+                raise ValueError(
+                    f"Order ID {order.order_id} already exists"
+                )
+
         if order.side == "BUY":
             self.buy_orders.append(order)
             self.buy_orders.sort(key=lambda item: item.price, reverse=True)

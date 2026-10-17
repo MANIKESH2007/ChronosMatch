@@ -1,3 +1,4 @@
+import pytest
 from chronos.order import Order
 from chronos.order_book import OrderBook
 
@@ -147,3 +148,21 @@ def test_get_all_orders():
     assert len(all_orders) == 2
     assert buy in all_orders
     assert sell in all_orders
+
+
+def test_duplicate_order_id_rejected_on_same_side():
+    order_book = OrderBook()
+
+    order_book.add_order(create_order(1, "BUY", 150))
+
+    with pytest.raises(ValueError, match="already exists"):
+        order_book.add_order(create_order(1, "BUY", 160))
+
+
+def test_duplicate_order_id_rejected_on_opposite_side():
+    order_book = OrderBook()
+
+    order_book.add_order(create_order(1, "BUY", 150))
+
+    with pytest.raises(ValueError, match="already exists"):
+        order_book.add_order(create_order(1, "SELL", 140))
