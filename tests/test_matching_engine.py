@@ -168,3 +168,38 @@ def test_buy_price_priority():
 
     assert len(engine.order_book.buy_orders) == 1
     assert len(engine.order_book.sell_orders) == 0
+
+
+def test_multiple_trades_with_partial_fill():
+    engine = MatchingEngine()
+
+    sell_order1 = Order(1, "SELL", 100, 3)
+    sell_order2 = Order(2, "SELL", 102, 4)
+    buy_order = Order(3, "BUY", 105, 5)
+
+    engine.add_order(sell_order1)
+    engine.add_order(sell_order2)
+    engine.add_order(buy_order)
+
+    # Two trades should execute
+    assert len(engine.trades) == 2
+
+    # First trade fills the first sell order
+    assert engine.trades[0]["sell_order_id"] == 1
+    assert engine.trades[0]["price"] == 100
+    assert engine.trades[0]["quantity"] == 3
+
+    # Second trade partially fills the second sell order
+    assert engine.trades[1]["sell_order_id"] == 2
+    assert engine.trades[1]["price"] == 102
+    assert engine.trades[1]["quantity"] == 2
+
+    # Verify remaining quantities
+    assert buy_order.quantity == 0
+    assert sell_order1.quantity == 0
+    assert sell_order2.quantity == 2
+
+    # Only the partially filled sell order remains
+    assert len(engine.order_book.buy_orders) == 0
+    assert len(engine.order_book.sell_orders) == 1
+    assert engine.order_book.sell_orders[0].order_id == 2
