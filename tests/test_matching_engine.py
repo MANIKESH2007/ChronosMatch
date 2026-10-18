@@ -203,3 +203,27 @@ def test_multiple_trades_with_partial_fill():
     assert len(engine.order_book.buy_orders) == 0
     assert len(engine.order_book.sell_orders) == 1
     assert engine.order_book.sell_orders[0].order_id == 2
+
+
+def test_cancel_partially_filled_order():
+    engine = MatchingEngine()
+
+    buy_order = Order(1, "BUY", 105, 10)
+    sell_order = Order(2, "SELL", 100, 4)
+
+    engine.add_order(buy_order)
+    engine.add_order(sell_order)
+
+    # Four units are traded; six remain in the BUY order
+    assert buy_order.quantity == 6
+
+    # Cancel the remaining BUY order
+    result = engine.order_book.cancel_order(buy_order.order_id)
+
+    assert result is True
+    assert buy_order not in engine.order_book.buy_orders
+    assert len(engine.order_book.buy_orders) == 0
+
+    # The completed trade must remain recorded
+    assert len(engine.trades) == 1
+    assert engine.trades[0]["quantity"] == 4
