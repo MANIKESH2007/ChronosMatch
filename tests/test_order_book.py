@@ -166,3 +166,12 @@ def test_duplicate_order_id_rejected_on_opposite_side():
 
     with pytest.raises(ValueError, match="already exists"):
         order_book.add_order(create_order(1, "SELL", 140))
+
+
+def test_add_invalid_object_raises_type_error():
+    book = OrderBook()
+    with pytest.raises(TypeError, match="Expected an Order object"):
+        book.add_order("not an order")
+
+    assert book.get_all_orders() == []
+
