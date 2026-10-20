@@ -5,17 +5,29 @@ import time
 from chronos.matching_engine import MatchingEngine
 from scripts.generate_orders import generate_orders
 
-
 def run_benchmark(order_count, trials):
-    # Generate orders before benchmarking.
-    # This keeps order generation outside the timed section.
-    orders = generate_orders(order_count)
+    if not isinstance(order_count, int) or isinstance(order_count, bool):
+        raise ValueError("order_count must be an integer")
+
+
+    if order_count < 0:
+        raise ValueError("order_count must be non-negative")
+
+    if not isinstance(trials, int) or isinstance(trials, bool):
+        raise ValueError("trials must be an integer")
+
+    if trials < 1:
+        raise ValueError("trials must be at least 1")
 
     processing_times = []
     throughputs = []
-    total_trades = 0
+    trade_counts = []
 
     for trial in range(trials):
+        # Generate fresh order objects for every trial.
+        # Keep generation outside the timed section.
+        orders = generate_orders(order_count, seed=42)
+
         engine = MatchingEngine()
 
         start_time = time.perf_counter()
@@ -33,7 +45,10 @@ def run_benchmark(order_count, trials):
         else:
             throughputs.append(0.0)
 
-        total_trades = len(engine.trades)
+        trade_counts.append(len(engine.trades))
+
+    if len(set(trade_counts)) != 1:
+        raise RuntimeError("Trade counts differed between benchmark trials")
 
     median_time = statistics.median(processing_times)
     median_throughput = statistics.median(throughputs)
@@ -41,7 +56,7 @@ def run_benchmark(order_count, trials):
     print("\n===== ChronosMatch Benchmark =====")
     print(f"Orders processed per trial: {order_count}")
     print(f"Number of trials: {trials}")
-    print(f"Trades executed per trial: {total_trades}")
+    print(f"Trades executed per trial: {trade_counts[0]}")
     print(f"Median processing time: {median_time:.6f} seconds")
     print(f"Minimum processing time: {min(processing_times):.6f} seconds")
     print(f"Maximum processing time: {max(processing_times):.6f} seconds")
@@ -56,29 +71,31 @@ def run_benchmark(order_count, trials):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Benchmark the ChronosMatch matching engine"
+    description="Benchmark the ChronosMatch matching engine"
     )
 
-    parser.add_argument(
-        "--orders",
-        type=int,
-        default=10000,
-        help="Number of orders to generate and process per trial"
-    )
 
-    parser.add_argument(
-        "--trials",
-        type=int,
-        default=5,
-        help="Number of benchmark trials"
-    )
+parser.add_argument(
+    "--orders",
+    type=int,
+    default=10000,
+    help="Number of orders to generate and process per trial"
+)
 
-    args = parser.parse_args()
+parser.add_argument(
+    "--trials",
+    type=int,
+    default=5,
+    help="Number of benchmark trials"
+)
 
-    if args.orders < 0:
-        parser.error("--orders must be non-negative")
+args = parser.parse_args()
 
-    if args.trials < 1:
-        parser.error("--trials must be at least 1")
+if args.orders < 0:
+    parser.error("--orders must be non-negative")
 
-    run_benchmark(args.orders, args.trials)
+if args.trials < 1:
+    parser.error("--trials must be at least 1")
+
+run_benchmark(args.orders, args.trials)
+
