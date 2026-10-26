@@ -75,27 +75,27 @@ if __name__ == "__main__":
     )
 
 
-parser.add_argument(
-    "--orders",
-    type=int,
-    default=10000,
-    help="Number of orders to generate and process per trial"
-)
+    parser.add_argument(
+        "--orders",
+        type=int,
+        default=10000,
+        help="Number of orders to generate and process per trial"
+    )
 
-parser.add_argument(
-    "--trials",
-    type=int,
-    default=5,
-    help="Number of benchmark trials"
-)
+    parser.add_argument(
+        "--trials",
+        type=int,
+        default=5,
+        help="Number of benchmark trials"
+    )
 
-args = parser.parse_args()
+    args = parser.parse_args()
 
-if args.orders < 0:
-    parser.error("--orders must be non-negative")
+    if args.orders < 0:
+        parser.error("--orders must be non-negative")
 
-if args.trials < 1:
-    parser.error("--trials must be at least 1")
+    if args.trials < 1:
+        parser.error("--trials must be at least 1")
 
-run_benchmark(args.orders, args.trials)
+    run_benchmark(args.orders, args.trials)
 
