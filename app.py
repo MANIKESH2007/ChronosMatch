@@ -1,12 +1,14 @@
 """
 ChronosMatch - Trading Terminal Dashboard (educational simulation)
 
-All numbers on this page come from the real MatchingEngine and the
-synthetic order generator. Nothing here is a live market feed.
+The dashboard combines synthetic matching-engine analytics with an
+optional, separate public Binance BTC/USDT market-data feed.
 """
 
+from datetime import datetime, timezone
 from html import escape
 
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -17,7 +19,9 @@ from chronos.dashboard_data import (
     get_trade_history_data,
     get_dashboard_summary,
 )
+from chronos.live_market_worker import LiveMarketWorker
 from scripts.generate_orders import generate_orders
+
 
 
 # ============================================================
@@ -599,7 +603,8 @@ if "next_order_id" not in st.session_state:
 if "last_generated_count" not in st.session_state:
     st.session_state.last_generated_count = 0
 
-
+if "live_market_worker" not in st.session_state:
+    st.session_state.live_market_worker = LiveMarketWorker()
 # ============================================================
 # SIDEBAR CONTROL CENTER
 # ============================================================
@@ -670,8 +675,9 @@ st.sidebar.markdown("### System information")
 st.sidebar.caption("Engine: Python matching engine")
 st.sidebar.caption("Interface: Streamlit")
 st.sidebar.caption("Charts: Plotly")
-st.sidebar.caption("Data source: synthetic orders")
-st.sidebar.caption("Educational simulation only. No live exchange connection.")
+st.sidebar.caption("Simulation: synthetic orders")
+st.sidebar.caption("Market data: optional Binance BTC/USDT feed")
+st.sidebar.caption("Educational use only. No real orders are placed.")
 
 
 # ============================================================
@@ -721,7 +727,7 @@ st.markdown(
         </div>
         <div class="nav-right">
             <div class="status-pill"><span class="status-dot"></span>SIMULATION MODE</div>
-            <div class="nav-note">Synthetic orders &nbsp;·&nbsp; No live exchange connection &nbsp;·&nbsp; Last run: {st.session_state.last_generated_count:,} orders</div>
+            <div class="nav-note">Synthetic matching engine &nbsp;·&nbsp; Optional Binance BTC/USDT feed &nbsp;·&nbsp; Last run: {st.session_state.last_generated_count:,} orders</div>
         </div>
     </div>
     """,
@@ -1028,15 +1034,134 @@ with st.expander("View full trade history table"):
 
 
 # ============================================================
+# LIVE BINANCE MARKET DATA (separate from simulated executions)
+# ============================================================
+
+st.write("")
+st.markdown("## Live Market Data")
+st.caption(
+    "Public Binance BTC/USDT trades. This feed is separate from "
+    "the synthetic orders and simulated executions above."
+)
+
+
+@st.fragment(run_every="2s")
+def render_live_market_panel():
+    worker = st.session_state.live_market_worker
+
+    status_col, count_col = st.columns(2)
+
+    with status_col:
+        st.metric("Feed status", worker.status)
+
+    with count_col:
+        st.metric("Trades received", f"{worker.received_count:,}")
+
+    start_col, stop_col = st.columns(2)
+
+    with start_col:
+        if st.button(
+            "Start live feed",
+            key="start_live_market_feed",
+            disabled=worker.is_running,
+            use_container_width=True,
+        ):
+            worker.start()
+
+    with stop_col:
+        if st.button(
+            "Stop live feed",
+            key="stop_live_market_feed",
+            disabled=not worker.is_running,
+            use_container_width=True,
+        ):
+            worker.stop(timeout=7.0)
+
+    if worker.last_error:
+        st.warning(f"Market-data error: {worker.last_error}")
+
+    trades = worker.get_trades(limit=50)
+
+    if not trades:
+        st.info(
+            "No live trades received yet. Start the feed to connect "
+            "to Binance and receive public BTC/USDT trade data."
+        )
+        return
+
+    latest_trade = trades[-1]
+
+    price_col, quantity_col, side_col = st.columns(3)
+
+    with price_col:
+        st.metric(
+            "Latest BTC/USDT price",
+            f"${latest_trade['price']:,.2f}",
+        )
+
+    with quantity_col:
+        st.metric(
+            "Latest trade quantity",
+            f"{latest_trade['quantity']:.6f} BTC",
+        )
+
+    with side_col:
+        st.metric(
+            "Aggressor side",
+            latest_trade["aggressor_side"],
+        )
+
+    live_df = pd.DataFrame(trades)
+
+    live_df["Time (UTC)"] = pd.to_datetime(
+        live_df["timestamp"],
+        unit="ms",
+        utc=True,
+    ).dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    live_df = live_df[
+        [
+            "Time (UTC)",
+            "symbol",
+            "price",
+            "quantity",
+            "aggressor_side",
+        ]
+    ].rename(
+        columns={
+            "symbol": "Symbol",
+            "price": "Price (USDT)",
+            "quantity": "Quantity (BTC)",
+            "aggressor_side": "Aggressor",
+        }
+    )
+
+    st.dataframe(
+        live_df.iloc[::-1].reset_index(drop=True),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.caption(
+        "Showing up to 50 recent trades, newest first. "
+        "Prices are public market data, not simulated execution prices."
+    )
+
+
+render_live_market_panel()
+
+
+# ============================================================
 # FOOTER
 # ============================================================
 
 st.markdown(
     """
     <div class="footer">
-        <strong>ChronosMatch</strong> · Zero-Copy High-Frequency Trading Engine (educational simulation)<br>
-        All orders are synthetic. This project is not connected to a live exchange and does not
-        represent real trading or actual market prices.
+        <strong>ChronosMatch</strong> · Zero-Copy High-Frequency Trading Engine (educational project)<br>
+        The matching engine processes synthetic orders and simulated executions.
+        An optional public Binance BTC/USDT feed provides live market data separately.
+        No real orders are placed, and live market data does not represent simulated executions.
     </div>
     """,
     unsafe_allow_html=True,
