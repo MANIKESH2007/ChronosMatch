@@ -943,6 +943,7 @@ with centre:
                 price_chart.update_yaxes(title_text="Price")
                 show_chart(price_chart)
 
+
 # ---------------- RIGHT RAIL: order book ----------------
 with rail_right:
     with st.container(key="panel_book"):
@@ -1045,7 +1046,7 @@ st.caption(
 )
 
 
-@st.fragment(run_every="2s")
+@st.fragment(run_every="5s")
 def render_live_market_panel():
     worker = st.session_state.live_market_worker
 
@@ -1110,6 +1111,83 @@ def render_live_market_panel():
             "Aggressor side",
             latest_trade["aggressor_side"],
         )
+
+
+
+    # Live BTC/USDT price chart
+    chart_trades = worker.get_trades(limit=500)
+    chart_df = pd.DataFrame(chart_trades)
+
+    chart_df["Time"] = pd.to_datetime(
+        chart_df["timestamp"],
+        unit="ms",
+        utc=True,
+    )
+
+    st.markdown("### BTC/USDT Price Movement")
+
+    price_chart = px.line(
+        chart_df,
+        x="Time",
+        y="price",
+        title="Live BTC/USDT Trade Price",
+        labels={
+            "Time": "Time (UTC)",
+            "price": "Price (USDT)",
+        },
+    )
+
+    style_figure(price_chart, height=380)
+
+    price_chart.update_traces(
+        line=dict(color=T["blue"], width=2),
+        hovertemplate=(
+            "Time: %{x|%Y-%m-%d %H:%M:%S UTC}<br>"
+            "Price: $%{y:,.2f}<extra></extra>"
+        ),
+    )
+
+    price_chart.update_xaxes(title_text="Time (UTC)")
+    price_chart.update_yaxes(title_text="Price (USDT)")
+
+    show_chart(price_chart)
+
+    # Live BTC trading-volume chart
+    st.markdown("### BTC Trading Volume")
+
+    volume_chart = px.bar(
+        chart_df,
+        x="Time",
+        y="quantity",
+        title="Recent BTC/USDT Trade Volume",
+        labels={
+            "Time": "Time (UTC)",
+            "quantity": "Trade Quantity (BTC)",
+        },
+    )
+
+    style_figure(volume_chart, height=320)
+
+    volume_chart.update_traces(
+        marker_color="#2FE3B0",
+        opacity=0.95,
+        marker_line_width=0,
+        hovertemplate=(
+            "Time: %{x|%Y-%m-%d %H:%M:%S UTC}<br>"
+            "Volume: %{y:.6f} BTC<extra></extra>"
+        ),
+    )
+
+
+    volume_chart.update_xaxes(title_text="Time (UTC)")
+    volume_chart.update_yaxes(title_text="Trade Quantity (BTC)")
+
+    show_chart(volume_chart)
+
+    st.caption(
+        "Price history uses recent public Binance trades. "
+        "This chart does not represent simulated executions."
+    )
 
     live_df = pd.DataFrame(trades)
 
