@@ -176,3 +176,31 @@ def test_worker_records_unexpected_errors(worker):
 
     assert worker.status == "Error"
     assert worker.last_error == "simulated worker failure"
+
+
+def test_start_does_not_restart_worker_after_stop_timeout(worker):
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_thread_main():
+        started.set()
+        release.wait(timeout=5)
+
+    with patch.object(worker, "_thread_main", side_effect=fake_thread_main):
+        worker.start()
+        assert started.wait(timeout=1)
+
+        first_thread = worker._thread
+
+        worker.stop(timeout=0)
+
+        assert first_thread.is_alive()
+
+        worker.start()
+
+        assert worker._thread is first_thread
+
+        release.set()
+        first_thread.join(timeout=1)
+
+    assert not worker.is_running
