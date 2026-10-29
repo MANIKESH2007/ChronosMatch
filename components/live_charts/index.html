@@ -1,0 +1,213 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.plot.ly/plotly-3.1.0.min.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            color: #eef3ff;
+            font-family: Inter, Arial, sans-serif;
+        }
+        .chart {
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        #price { height: 380px; }
+        #volume, #activity { height: 320px; }
+        .error {
+            padding: 16px;
+            color: #ff8b9b;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="price" class="chart"></div>
+    <div id="volume" class="chart"></div>
+    <div id="activity" class="chart"></div>
+    <div id="error" class="error" hidden></div>
+
+    <script>
+        const sendMessage = (type, extra = {}) => {
+            window.parent.postMessage({
+                isStreamlitMessage: true,
+                type,
+                ...extra
+            }, "*");
+        };
+
+        let latestArgs = null;
+        let rendering = false;
+        let renderPending = false;
+
+        const baseLayout = {
+            autosize: true,
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor: "rgba(6,12,26,0.55)",
+            font: {family: "Inter, Arial, sans-serif", size: 12, color: "#eef3ff"},
+            margin: {l: 60, r: 20, t: 48, b: 55},
+            xaxis: {
+                gridcolor: "rgba(120,160,230,0.14)",
+                zerolinecolor: "rgba(120,160,230,0.14)",
+                title: "Time (UTC)"
+            },
+            yaxis: {
+                gridcolor: "rgba(120,160,230,0.14)",
+                zerolinecolor: "rgba(120,160,230,0.14)"
+            },
+            uirevision: "chronos-live-market"
+        };
+
+        function getLayout(title, yTitle, height) {
+            return {
+                ...baseLayout,
+                title: {text: title, x: 0.02, xanchor: "left"},
+                height,
+                yaxis: {...baseLayout.yaxis, title: yTitle}
+            };
+        }
+
+        async function renderCharts(args) {
+            if (!window.Plotly || !args) {
+                throw new Error("Plotly.js has not loaded yet.");
+            }
+
+            const times = args.times || [];
+            const prices = args.prices || [];
+            const quantities = args.quantities || [];
+            const buyVolume = Number(args.buy_volume || 0);
+            const sellVolume = Number(args.sell_volume || 0);
+
+            const priceTrace = {
+                x: times,
+                y: prices,
+                type: "scatter",
+                mode: "lines",
+                name: "BTC/USDT",
+                line: {color: "#4a86ff", width: 2},
+                hovertemplate:
+                    "Time: %{x}<br>Price: $%{y:,.2f}<extra></extra>"
+            };
+
+            const volumeTrace = {
+                x: times,
+                y: quantities,
+                type: "bar",
+                name: "Trade volume",
+                marker: {color: "#2fe3b0", line: {width: 0}},
+                hovertemplate:
+                    "Time: %{x}<br>Volume: %{y:.6f} BTC<extra></extra>"
+            };
+
+            const activityTrace = {
+                x: ["BUY", "SELL"],
+                y: [buyVolume, sellVolume],
+                type: "bar",
+                marker: {
+                    color: ["#2fe3b0", "#ff5c7a"],
+                    line: {width: 0}
+                },
+                text: [buyVolume, sellVolume],
+                texttemplate: "%{text:.6f}",
+                textposition: "outside",
+                hovertemplate:
+                    "Side: %{x}<br>Volume: %{y:.6f} BTC<extra></extra>"
+            };
+
+            const maxVolume = Math.max(buyVolume, sellVolume);
+            const activityLayout = {
+                ...baseLayout,
+                title: {
+                    text: "Aggressive Buyer vs. Seller Volume",
+                    x: 0.02,
+                    xanchor: "left"
+                },
+                height: 320,
+                showlegend: false,
+                xaxis: {
+                    type: "category",
+                    title: "Aggressor Side",
+                    categoryorder: "array",
+                    categoryarray: ["BUY", "SELL"],
+                    gridcolor: "rgba(120,160,230,0.14)",
+                    zerolinecolor: "rgba(120,160,230,0.14)"
+                },
+                yaxis: {
+                    ...baseLayout.yaxis,
+                    title: "Total Quantity (BTC)",
+                    rangemode: "tozero",
+                    range: [0, maxVolume > 0 ? maxVolume * 1.25 : 1]
+                }
+            };
+
+
+            await Promise.all([
+                Plotly.react(
+                    "price",
+                    [priceTrace],
+                    getLayout("Live BTC/USDT Trade Price", "Price (USDT)", 380),
+                    {responsive: true, displaylogo: false}
+                ),
+                Plotly.react(
+                    "volume",
+                    [volumeTrace],
+                    getLayout("Recent BTC/USDT Trade Volume", "Quantity (BTC)", 320),
+                    {responsive: true, displaylogo: false}
+                ),
+                Plotly.react(
+                    "activity",
+                    [activityTrace],
+                    activityLayout,
+                    {responsive: true, displaylogo: false}
+                )
+            ]);
+
+            document.getElementById("error").hidden = true;
+        }
+
+        async function updateCharts() {
+            if (rendering) {
+                renderPending = true;
+                return;
+            }
+
+            if (!latestArgs) return;
+
+            rendering = true;
+
+            try {
+                await renderCharts(latestArgs);
+            } catch (error) {
+                const errorBox = document.getElementById("error");
+                errorBox.textContent = "Chart update failed: " + error.message;
+                errorBox.hidden = false;
+            } finally {
+                rendering = false;
+
+                if (renderPending) {
+                    renderPending = false;
+                    updateCharts();
+                }
+            }
+        }
+
+        window.addEventListener("message", event => {
+            const message = event.data;
+
+            if (!message || message.type !== "streamlit:render") return;
+
+            latestArgs = message.args || {};
+            updateCharts();
+        });
+
+        sendMessage("streamlit:componentReady", {apiVersion: 1});
+        sendMessage("streamlit:setFrameHeight", {height: 1080});
+
+        window.addEventListener("load", updateCharts);
+    </script>
+</body>
+</html>

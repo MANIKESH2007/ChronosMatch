@@ -20,6 +20,7 @@ from chronos.dashboard_data import (
     get_dashboard_summary,
 )
 from chronos.live_market_worker import LiveMarketWorker
+from chronos.live_charts_component import render_live_charts
 from scripts.generate_orders import generate_orders
 
 
@@ -449,12 +450,27 @@ st.markdown(
 # SMALL HELPERS
 # ============================================================
 
-def show_chart(fig):
-    """Draw a Plotly chart at full width (works on old and new Streamlit)."""
+
+def show_chart(fig, chart_key):
+    """Render a Plotly chart using a stable, unique Streamlit key."""
+    fig.update_layout(uirevision=chart_key)
+
     try:
-        st.plotly_chart(fig, width="stretch", theme=None)
+        st.plotly_chart(
+            fig,
+            width="stretch",
+            theme=None,
+            key=chart_key,
+        )
     except TypeError:
-        st.plotly_chart(fig, use_container_width=True, theme=None)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            theme=None,
+            key=chart_key,
+        )
+
+
 
 
 def rgba(hex_colour, alpha):
@@ -822,7 +838,7 @@ with rail_left:
                 annotations=[dict(text=f"<b>{total_volume:,}</b><br>units", x=0.5, y=0.5,
                                   showarrow=False, font=dict(size=16, color=T["text"]))],
             )
-            show_chart(donut)
+            show_chart(donut, "dashboard_donut")
 
 # ---------------- CENTRE: main analytics (tabs) ----------------
 with centre:
@@ -838,7 +854,7 @@ with centre:
                 unsafe_allow_html=True,
             )
             if trade_history_data.empty:
-                show_chart(empty_chart(500, "No trades yet: generate orders so buy and sell prices can cross", "Trade #", "Price"))
+                show_chart(empty_chart(500, "No trades yet: generate orders so buy and sell prices can cross", "Trade #", "Price"), "empty_trade_price")
             else:
                 td = trade_history_data.reset_index(drop=True).copy()
                 td["Trade #"] = td.index + 1
@@ -869,7 +885,7 @@ with centre:
                 style_figure(wave, 500)
                 wave.update_yaxes(title_text="Price", range=[base, high + pad])
                 wave.update_xaxes(title_text="Trade #")
-                show_chart(wave)
+                show_chart(wave, "dashboard_wave")
 
         # ----- Tab 2: market depth (cumulative resting quantity by price) -----
         with tab_depth:
@@ -879,7 +895,7 @@ with centre:
                 unsafe_allow_html=True,
             )
             if order_book_data.empty:
-                show_chart(empty_chart(500, "No active orders yet", "Price", "Cumulative quantity"))
+                show_chart(empty_chart(500, "No active orders yet", "Price", "Cumulative quantity"), "empty_order_depth")
             else:
                 depth = go.Figure()
                 if not buy_orders.empty:
@@ -903,7 +919,7 @@ with centre:
                 style_figure(depth, 500)
                 depth.update_xaxes(title_text="Price")
                 depth.update_yaxes(title_text="Cumulative quantity")
-                show_chart(depth)
+                show_chart(depth, "dashboard_depth")
 
         # ----- Tab 3: order scatter (every active order) -----
         with tab_orders:
@@ -913,7 +929,7 @@ with centre:
                 unsafe_allow_html=True,
             )
             if order_book_data.empty:
-                show_chart(empty_chart(500, "No active orders yet", "Order ID", "Price"))
+                show_chart(empty_chart(500, "No active orders yet", "Order ID", "Price"), "empty_order_price")
             else:
                 price_chart = px.scatter(
                     order_book_data,
@@ -941,7 +957,7 @@ with centre:
                     )
                 style_figure(price_chart, 500)
                 price_chart.update_yaxes(title_text="Price")
-                show_chart(price_chart)
+                show_chart(price_chart, "dashboard_price")
 
 
 # ---------------- RIGHT RAIL: order book ----------------
@@ -978,7 +994,7 @@ with row2_left:
             unsafe_allow_html=True,
         )
         if trade_history_data.empty:
-            show_chart(empty_chart(290, "No trades yet: a trade is recorded when buy and sell prices cross", "Trade #", "Quantity"))
+            show_chart(empty_chart(290, "No trades yet: a trade is recorded when buy and sell prices cross", "Trade #", "Quantity"), "empty_trade_quantity")
         else:
             trade_chart_data = trade_history_data.reset_index(drop=True).copy()
             trade_chart_data["Trade #"] = trade_chart_data.index + 1
@@ -994,7 +1010,7 @@ with row2_left:
             style_figure(trade_chart, 290)
             trade_chart.update_layout(coloraxis_showscale=False)
             trade_chart.update_yaxes(title_text="Quantity")
-            show_chart(trade_chart)
+            show_chart(trade_chart, "dashboard_trade_history")
 
 with row2_right:
     with st.container(key="panel_history"):
@@ -1046,7 +1062,7 @@ st.caption(
 )
 
 
-@st.fragment(run_every="5s")
+@st.fragment(run_every="5s", key="live_market_panel")
 def render_live_market_panel():
     worker = st.session_state.live_market_worker
 
@@ -1117,6 +1133,49 @@ def render_live_market_panel():
     # Live BTC/USDT price chart
     chart_trades = worker.get_trades(limit=500)
     chart_df = pd.DataFrame(chart_trades)
+    # Live market activity statistics
+    total_live_trades = len(chart_df)
+
+    buy_volume = chart_df.loc[
+        chart_df["aggressor_side"] == "BUY",
+        "quantity",
+    ].sum()
+
+    sell_volume = chart_df.loc[
+        chart_df["aggressor_side"] == "SELL",
+        "quantity",
+    ].sum()
+
+    volume_difference = buy_volume - sell_volume
+
+    st.markdown("### Live Market Statistics")
+
+    stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
+
+    with stats_col1:
+        st.metric(
+            "Recent Trades",
+            f"{total_live_trades:,}",
+        )
+
+    with stats_col2:
+        st.metric(
+            "Aggressive Buy Volume",
+            f"{buy_volume:.6f} BTC",
+        )
+
+    with stats_col3:
+        st.metric(
+            "Aggressive Sell Volume",
+            f"{sell_volume:.6f} BTC",
+        )
+
+    with stats_col4:
+        st.metric(
+            "Buy − Sell Volume",
+            f"{volume_difference:+.6f} BTC",
+        )
+
 
     chart_df["Time"] = pd.to_datetime(
         chart_df["timestamp"],
@@ -1124,69 +1183,18 @@ def render_live_market_panel():
         utc=True,
     )
 
-    st.markdown("### BTC/USDT Price Movement")
-
-    price_chart = px.line(
-        chart_df,
-        x="Time",
-        y="price",
-        title="Live BTC/USDT Trade Price",
-        labels={
-            "Time": "Time (UTC)",
-            "price": "Price (USDT)",
-        },
+    st.markdown("### Live Market Charts")
+    render_live_charts(
+        times=chart_df["Time"].dt.strftime("%Y-%m-%d %H:%M:%S").tolist(),
+        prices=chart_df["price"].astype(float).tolist(),
+        quantities=chart_df["quantity"].astype(float).tolist(),
+        buy_volume=buy_volume,
+        sell_volume=sell_volume,
     )
-
-    style_figure(price_chart, height=380)
-
-    price_chart.update_traces(
-        line=dict(color=T["blue"], width=2),
-        hovertemplate=(
-            "Time: %{x|%Y-%m-%d %H:%M:%S UTC}<br>"
-            "Price: $%{y:,.2f}<extra></extra>"
-        ),
-    )
-
-    price_chart.update_xaxes(title_text="Time (UTC)")
-    price_chart.update_yaxes(title_text="Price (USDT)")
-
-    show_chart(price_chart)
-
-    # Live BTC trading-volume chart
-    st.markdown("### BTC Trading Volume")
-
-    volume_chart = px.bar(
-        chart_df,
-        x="Time",
-        y="quantity",
-        title="Recent BTC/USDT Trade Volume",
-        labels={
-            "Time": "Time (UTC)",
-            "quantity": "Trade Quantity (BTC)",
-        },
-    )
-
-    style_figure(volume_chart, height=320)
-
-    volume_chart.update_traces(
-        marker_color="#2FE3B0",
-        opacity=0.95,
-        marker_line_width=0,
-        hovertemplate=(
-            "Time: %{x|%Y-%m-%d %H:%M:%S UTC}<br>"
-            "Volume: %{y:.6f} BTC<extra></extra>"
-        ),
-    )
-
-
-    volume_chart.update_xaxes(title_text="Time (UTC)")
-    volume_chart.update_yaxes(title_text="Trade Quantity (BTC)")
-
-    show_chart(volume_chart)
 
     st.caption(
-        "Price history uses recent public Binance trades. "
-        "This chart does not represent simulated executions."
+        "Charts show recent public Binance BTC/USDT trades. "
+        "They are separate from simulated executions."
     )
 
     live_df = pd.DataFrame(trades)
