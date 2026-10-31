@@ -161,3 +161,51 @@ The following results were recorded in a local benchmark run:
 ## Disclaimer
 
 ChronosMatch is an educational software project. It is not connected to a live exchange and is not intended for real-money trading.
+
+## Historical Dataset — September 2026
+
+ChronosMatch uses the Binance public data archive as the source for its historical BTC/USDT market dataset.
+
+**Dataset details:**
+
+* **Exchange:** Binance
+* **Trading pair:** BTCUSDT
+* **Data type:** Aggregate trades (`aggTrades`)
+* **Period:** September 1–30, 2026 (UTC)
+* **Records:** 26,690,426
+* **CSV file:** `BTCUSDT-aggTrades-2026-09.csv`
+* **Timestamp unit:** Microseconds
+* **Source:** https://data.binance.vision/
+
+### CSV Column Definitions
+
+The CSV file does not contain a header row. Its eight columns are:
+
+| Column | Field | Description |
+| --- | --- | --- |
+| 1 | `agg_trade_id` | Aggregate trade ID |
+| 2 | `price` | Executed trade price |
+| 3 | `quantity` | Executed quantity |
+| 4 | `first_trade_id` | First trade ID in the aggregate |
+| 5 | `last_trade_id` | Last trade ID in the aggregate |
+| 6 | `timestamp` | Trade execution timestamp in microseconds |
+| 7 | `is_buyer_maker` | Indicates whether the buyer was the market maker |
+| 8 | `is_best_match` | Indicates whether the trade was the best price match |
+
+### Dataset Validation
+
+The downloaded dataset was checked before integration:
+
+* ZIP archive integrity verified.
+* All 26,690,426 records were scanned.
+* Every record contained exactly eight columns.
+* Price, quantity, trade ID, and timestamp checks passed.
+* Aggregate trade IDs were strictly increasing.
+* Timestamps were in non-decreasing order.
+
+**Validation result:** All performed checks passed.
+
+The raw CSV and ZIP files are stored locally in the `data/` directory and excluded from Git to avoid committing large dataset files.
+
+Historical trade data will be used for historical market analysis. It remains separate from live market data and simulated matching-engine activity.
+
