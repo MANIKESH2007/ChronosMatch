@@ -3,6 +3,7 @@ import pytest
 
 from chronos.historical_data import (
     HISTORICAL_TRADE_COLUMNS,
+    aggregate_historical_trades,
     iter_historical_trades,
     summarize_historical_trades,
 )
@@ -123,3 +124,36 @@ def test_invalid_price_or_quantity_raises_error(
 
     with pytest.raises(ValueError):
         list(iter_historical_trades(file_path))
+
+
+def test_historical_ohlcv_aggregation_across_chunks(sample_csv):
+    candles = aggregate_historical_trades(
+        sample_csv,
+        chunksize=1,
+        frequency="1h",
+    )
+
+    assert len(candles) == 1
+
+    candle = candles.iloc[0]
+
+    assert candle["open"] == 100.0
+    assert candle["high"] == 120.0
+    assert candle["low"] == 100.0
+    assert candle["close"] == 120.0
+    assert candle["quantity"] == 6.0
+    assert candle["quote_volume"] == 650.0
+    assert candle["trade_count"] == 3
+
+    assert candle["timestamp"] == pd.Timestamp(
+        "2026-09-01 00:00:00",
+        tz="UTC",
+    )
+
+
+def test_historical_aggregation_empty_dataset_raises_error(tmp_path):
+    empty_file = tmp_path / "empty.csv"
+    empty_file.write_text("")
+
+    with pytest.raises(ValueError, match="no trades"):
+        aggregate_historical_trades(empty_file)

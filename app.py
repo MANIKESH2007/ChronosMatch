@@ -7,6 +7,7 @@ optional, separate public Binance BTC/USDT market-data feed.
 
 from datetime import datetime, timezone
 from html import escape
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -20,10 +21,24 @@ from chronos.dashboard_data import (
     get_dashboard_summary,
 )
 from chronos.live_market_worker import LiveMarketWorker
+from chronos.historical_data import (
+    HISTORICAL_DATA_PATH,
+    aggregate_historical_trades,
+    summarize_historical_trades,
+)
 from chronos.live_charts_component import render_live_charts
 from scripts.generate_orders import generate_orders
 
 
+
+@st.cache_data(show_spinner="Processing historical trade summary...")
+def load_cached_historical_summary(path: str, modified_ns: int):
+    return summarize_historical_trades(path)
+
+
+@st.cache_data(show_spinner="Building historical OHLCV candles...")
+def load_cached_historical_candles(path: str, modified_ns: int):
+    return aggregate_historical_trades(path, frequency="1h")
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -31,7 +46,7 @@ from scripts.generate_orders import generate_orders
 
 st.set_page_config(
     page_title="ChronosMatch | Trading Terminal",
-    page_icon="📈",
+    page_icon="C",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -666,7 +681,7 @@ seed = st.sidebar.number_input(
     help="Use the same seed to reproduce the generated order sequence.",
 )
 
-if st.sidebar.button("▶  Generate & Process Orders", type="primary"):
+if st.sidebar.button("Generate & Process Orders", type="primary"):
     engine = st.session_state.engine
     new_orders = generate_orders(count=order_count, seed=int(seed))
 
@@ -680,7 +695,7 @@ if st.sidebar.button("▶  Generate & Process Orders", type="primary"):
     st.session_state.last_generated_count = len(new_orders)
     st.rerun()
 
-if st.sidebar.button("↻  Reset Simulation"):
+if st.sidebar.button("Reset Simulation"):
     st.session_state.engine = MatchingEngine()
     st.session_state.next_order_id = 1
     st.session_state.last_generated_count = 0
@@ -738,12 +753,12 @@ st.markdown(
             <div class="brand-icon">C</div>
             <div>
                 <div class="brand-name">Chronos<span>Match</span></div>
-                <div class="brand-subtitle">Order-matching engine simulation &nbsp;·&nbsp; Trading terminal</div>
+                <div class="brand-subtitle">Order-matching engine simulation &nbsp;|&nbsp; Trading terminal</div>
             </div>
         </div>
         <div class="nav-right">
             <div class="status-pill"><span class="status-dot"></span>SIMULATION MODE</div>
-            <div class="nav-note">Synthetic matching engine &nbsp;·&nbsp; Optional Binance BTC/USDT feed &nbsp;·&nbsp; Last run: {st.session_state.last_generated_count:,} orders</div>
+            <div class="nav-note">Synthetic matching engine &nbsp;|&nbsp; Optional Binance BTC/USDT feed &nbsp;|&nbsp; Last run: {st.session_state.last_generated_count:,} orders</div>
         </div>
     </div>
     """,
@@ -767,7 +782,7 @@ kpis = [
     kpi_card("Total Traded Quantity", f"{total_traded_quantity:,}", "Units matched across all trades", "purple"),
     kpi_card(
         "Average Trade Price",
-        f"{average_trade_price:,.2f}" if average_trade_price is not None else "–",
+        f"{average_trade_price:,.2f}" if average_trade_price is not None else "-",
         "Mean execution price" if average_trade_price is not None else "No trades yet",
         "amber",
     ),
@@ -784,7 +799,7 @@ st.markdown(f'<div class="kpi-grid">{"".join(kpis)}</div>', unsafe_allow_html=Tr
 
 spread = (best_ask - best_bid) if (best_bid is not None and best_ask is not None) else None
 mid = ((best_ask + best_bid) / 2) if spread is not None else None
-dash = "–"
+dash = "-"
 
 rail_left, centre, rail_right = st.columns([0.95, 2.5, 1.35])
 
@@ -806,9 +821,9 @@ with rail_left:
             sell_pct = 100 - buy_pct
             st.markdown(
                 f"""
-                <div class="bar-label"><span>Buy volume</span><span>{buy_volume:,} · {buy_pct:.0f}%</span></div>
+                <div class="bar-label"><span>Buy volume</span><span>{buy_volume:,} | {buy_pct:.0f}%</span></div>
                 <div class="bar buy"><i style="width:{buy_pct:.0f}%"></i></div>
-                <div class="bar-label"><span>Sell volume</span><span>{sell_volume:,} · {sell_pct:.0f}%</span></div>
+                <div class="bar-label"><span>Sell volume</span><span>{sell_volume:,} | {sell_pct:.0f}%</span></div>
                 <div class="bar sell"><i style="width:{sell_pct:.0f}%"></i></div>
                 """,
                 unsafe_allow_html=True,
@@ -875,7 +890,7 @@ with centre:
                     fill="tonexty", fillcolor=rgba(T["cyan"], 0.18),
                     customdata=td[["Quantity", "Buy Order ID", "Sell Order ID"]].to_numpy(),
                     hovertemplate=("Trade %{x}<br>Price %{y:,.2f}<br>Quantity %{customdata[0]:,}"
-                                   "<br>Buy order %{customdata[1]} · Sell order %{customdata[2]}<extra></extra>"),
+                                   "<br>Buy order %{customdata[1]} | Sell order %{customdata[2]}<extra></extra>"),
                 ))
                 wave.add_trace(go.Scatter(
                     x=td["Trade #"], y=td["Average"], mode="lines", name="5-trade average",
@@ -971,14 +986,14 @@ with rail_right:
         if order_book_data.empty:
             empty_state("The order book is empty.<br>Generate synthetic orders from the sidebar.")
         else:
-            st.markdown(f'<div class="ladder-title sell">Sell side · {len(sell_orders):,} orders</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="ladder-title sell">Sell side | {len(sell_orders):,} orders</div>', unsafe_allow_html=True)
             st.markdown(ladder_html(sell_orders, "SELL", reverse=True), unsafe_allow_html=True)
             st.markdown(
                 f'<div class="midrow"><span>Mid price</span><b>{f"{mid:,.2f}" if mid is not None else dash}</b>'
                 f'<span>Spread {f"{spread:,.2f}" if spread is not None else dash}</span></div>',
                 unsafe_allow_html=True,
             )
-            st.markdown(f'<div class="ladder-title buy">Buy side · {len(buy_orders):,} orders</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="ladder-title buy">Buy side | {len(buy_orders):,} orders</div>', unsafe_allow_html=True)
             st.markdown(ladder_html(buy_orders, "BUY", header=False), unsafe_allow_html=True)
 
 st.write("")
@@ -1049,6 +1064,134 @@ with st.expander("View full trade history table"):
     else:
         html_table(trade_history_data)
 
+
+# ============================================================
+# HISTORICAL BINANCE MARKET ANALYTICS (September 2026)
+# ============================================================
+
+st.write("")
+st.markdown("## Historical Market Analytics")
+st.caption(
+    "Binance BTCUSDT aggregate trades | September 1-30, 2026 (UTC). "
+    "Historical data is independent of simulated executions and the live feed."
+)
+
+try:
+    historical_path = Path(HISTORICAL_DATA_PATH)
+    historical_file = historical_path.stat()
+
+    historical_summary = load_cached_historical_summary(
+        str(historical_path),
+        historical_file.st_mtime_ns,
+    )
+
+    historical_candles = load_cached_historical_candles(
+        str(historical_path),
+        historical_file.st_mtime_ns,
+    )
+
+    # Historical chart date-range filter
+    minimum_date = historical_candles["timestamp"].min().date()
+    maximum_date = historical_candles["timestamp"].max().date()
+
+    st.markdown("### Select Historical Period")
+    selected_dates = st.date_input(
+        "Date range (UTC)",
+        value=(minimum_date, maximum_date),
+        min_value=minimum_date,
+        max_value=maximum_date,
+        key="historical_date_range",
+    )
+
+    if len(selected_dates) == 2:
+        start_date, end_date = selected_dates
+    else:
+        start_date = selected_dates[0]
+        end_date = selected_dates[0]
+
+    filtered_candles = historical_candles[
+        historical_candles["timestamp"].dt.date.between(
+            start_date, end_date
+        )
+    ]
+
+    metric_columns = st.columns(6)
+
+    historical_metrics = [
+        ("Total Trades", f"{historical_summary['Total Trades']:,}"),
+        ("Minimum Price", f"${historical_summary['Minimum Price']:,.2f}"),
+        ("Maximum Price", f"${historical_summary['Maximum Price']:,.2f}"),
+        ("BTC Volume", f"{historical_summary['Total Quantity']:,.2f}"),
+        ("USDT Volume", f"${historical_summary['Total Quote Volume']:,.0f}"),
+        ("VWAP", f"${historical_summary['VWAP']:,.2f}"),
+    ]
+
+    for column, (label, value) in zip(metric_columns, historical_metrics):
+        with column:
+            st.metric(label, value)
+
+    st.write("")
+
+    price_column, volume_column = st.columns(2)
+
+    with price_column:
+        st.markdown("### Hourly BTC Price")
+        price_figure = px.line(
+            filtered_candles,
+            x="timestamp",
+            y="close",
+            labels={
+                "timestamp": "Time (UTC)",
+                "close": "Closing Price (USDT)",
+            },
+            title="BTCUSDT Hourly Closing Price",
+        )
+        price_figure.update_layout(
+            template="plotly_dark",
+            height=400,
+            margin=dict(l=20, r=20, t=55, b=20),
+        )
+        st.plotly_chart(
+            price_figure,
+            use_container_width=True,
+            key="historical_price_chart",
+        )
+
+    with volume_column:
+        st.markdown("### Hourly BTC Volume")
+        volume_figure = px.bar(
+            filtered_candles,
+            x="timestamp",
+            y="quantity",
+            labels={
+                "timestamp": "Time (UTC)",
+                "quantity": "BTC Volume",
+            },
+            title="BTCUSDT Hourly Trading Volume",
+        )
+        volume_figure.update_layout(
+            template="plotly_dark",
+            height=400,
+            margin=dict(l=20, r=20, t=55, b=20),
+        )
+        st.plotly_chart(
+            volume_figure,
+            use_container_width=True,
+            key="historical_volume_chart",
+        )
+
+    st.caption(
+        f"Displaying {len(filtered_candles):,} hourly candles. "
+        "Charts use aggregated historical trades, not live prices."
+    )
+
+except FileNotFoundError:
+    st.warning(
+        "Historical dataset not found. Place the September 2026 "
+        "BTCUSDT aggregate-trades CSV in the project's data folder."
+    )
+except Exception as error:
+    st.error(f"Unable to load historical market analytics: {error}")
 
 # ============================================================
 # LIVE BINANCE MARKET DATA (separate from simulated executions)
@@ -1172,7 +1315,7 @@ def render_live_market_panel():
 
     with stats_col4:
         st.metric(
-            "Buy − Sell Volume",
+            "Buy vs Sell Volume",
             f"{volume_difference:+.6f} BTC",
         )
 
@@ -1244,7 +1387,7 @@ render_live_market_panel()
 st.markdown(
     """
     <div class="footer">
-        <strong>ChronosMatch</strong> · Zero-Copy High-Frequency Trading Engine (educational project)<br>
+        <strong>ChronosMatch</strong> | Zero-Copy High-Frequency Trading Engine (educational project)<br>
         The matching engine processes synthetic orders and simulated executions.
         An optional public Binance BTC/USDT feed provides live market data separately.
         No real orders are placed, and live market data does not represent simulated executions.

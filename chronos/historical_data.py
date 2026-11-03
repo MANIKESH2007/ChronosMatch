@@ -158,3 +158,51 @@ def summarize_historical_trades(
         "First Timestamp": first_timestamp,
         "Last Timestamp": last_timestamp,
     }
+
+def aggregate_historical_trades(
+    path: str | Path = HISTORICAL_DATA_PATH,
+    chunksize: int = 100_000,
+    frequency: str = "1h",
+) -> pd.DataFrame:
+    """
+    Aggregate historical trades into time-based OHLCV candles.
+
+    Processes the CSV in chunks and combines partial time buckets
+    across chunk boundaries.
+    """
+    partial_results = []
+
+    for chunk in iter_historical_trades(path, chunksize):
+        chunk = chunk.copy()
+        chunk["quote_volume"] = chunk["price"] * chunk["quantity"]
+        chunk["bucket"] = chunk["timestamp"].dt.floor(frequency)
+
+        grouped = chunk.groupby("bucket", sort=True).agg(
+            open=("price", "first"),
+            high=("price", "max"),
+            low=("price", "min"),
+            close=("price", "last"),
+            quantity=("quantity", "sum"),
+            quote_volume=("quote_volume", "sum"),
+            trade_count=("price", "count"),
+        )
+
+        partial_results.append(grouped)
+
+    if not partial_results:
+        raise ValueError("Historical dataset contains no trades")
+
+    combined = pd.concat(partial_results)
+
+    result = combined.groupby(level=0, sort=True).agg(
+        open=("open", "first"),
+        high=("high", "max"),
+        low=("low", "min"),
+        close=("close", "last"),
+        quantity=("quantity", "sum"),
+        quote_volume=("quote_volume", "sum"),
+        trade_count=("trade_count", "sum"),
+    )
+
+    result.index.name = "timestamp"
+    return result.reset_index()
