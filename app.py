@@ -37,8 +37,15 @@ def load_cached_historical_summary(path: str, modified_ns: int):
 
 
 @st.cache_data(show_spinner="Building historical OHLCV candles...")
-def load_cached_historical_candles(path: str, modified_ns: int):
-    return aggregate_historical_trades(path, frequency="1h")
+def load_cached_historical_candles(
+    path: str,
+    modified_ns: int,
+    frequency: str,
+):
+    return aggregate_historical_trades(
+        path,
+        frequency=frequency,
+    )
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -1085,9 +1092,25 @@ try:
         historical_file.st_mtime_ns,
     )
 
+    st.markdown("### Historical Chart Settings")
+
+    timeframe_options = {
+        "1 Hour": "1h",
+        "4 Hours": "4h",
+        "1 Day": "1D",
+    }
+
+    selected_timeframe = st.selectbox(
+        "Candle Timeframe",
+        options=list(timeframe_options.keys()),
+        index=0,
+        key="historical_timeframe",
+    )
+
     historical_candles = load_cached_historical_candles(
         str(historical_path),
         historical_file.st_mtime_ns,
+        timeframe_options[selected_timeframe],
     )
 
     # Historical chart date-range filter
@@ -1135,7 +1158,7 @@ try:
     price_column, volume_column = st.columns(2)
 
     with price_column:
-        st.markdown("### Hourly BTC Price")
+        st.markdown(f"### BTC Price ({selected_timeframe})")
         price_figure = px.line(
             filtered_candles,
             x="timestamp",
@@ -1144,7 +1167,7 @@ try:
                 "timestamp": "Time (UTC)",
                 "close": "Closing Price (USDT)",
             },
-            title="BTCUSDT Hourly Closing Price",
+            title=f"BTCUSDT {selected_timeframe} Closing Price",
         )
         price_figure.update_layout(
             template="plotly_dark",
@@ -1158,7 +1181,7 @@ try:
         )
 
     with volume_column:
-        st.markdown("### Hourly BTC Volume")
+        st.markdown(f"### BTC Volume ({selected_timeframe})")
         volume_figure = px.bar(
             filtered_candles,
             x="timestamp",
@@ -1167,7 +1190,7 @@ try:
                 "timestamp": "Time (UTC)",
                 "quantity": "BTC Volume",
             },
-            title="BTCUSDT Hourly Trading Volume",
+            title=f"BTCUSDT {selected_timeframe} Trading Volume",
         )
         volume_figure.update_layout(
             template="plotly_dark",
@@ -1181,7 +1204,7 @@ try:
         )
 
     st.caption(
-        f"Displaying {len(filtered_candles):,} hourly candles. "
+        f"Displaying {len(filtered_candles):,} {selected_timeframe} candles. "
         "Charts use aggregated historical trades, not live prices."
     )
 
